@@ -19,13 +19,14 @@ def ScanTraining(training, emojis,counts):
         while i < len(curr) - 1:
             if curr[i] == " " and curr[i+1] == " ":
                 curr = curr[:i] + curr[i+1:]
-            if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
+            # if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
             # if (curr[i] == u'\ud83d' and curr[i+1] == u'\ude0a') or (curr[i] == u'\ud83d' and curr[i+1] == u'\ude12'):
-            # if curr[i] == u'\ud83d' and curr[i+1] >= u'\ude00' and curr[i+1] <= u'\ude13':
+            if curr[i] == u'\ud83d' and curr[i+1] >= u'\ude00' and curr[i+1] <= u'\ude13':
                 if curr[i:i+2] not in emojis:
                     emojis[curr[i:i+2]] = defaultdict(int)
-                curr_emojis.add(curr[i:i+2])
+                
             if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
+                curr_emojis.add(curr[i:i+2])
                 curr = curr[:i] + curr[i+2:]
                 i -= 1
                 # if i != len(curr) - 2 and curr[i+2] != " ":
@@ -37,15 +38,19 @@ def ScanTraining(training, emojis,counts):
         curr = curr.lower().split(" ")
         for emoji in curr_emojis:
             # key emoji is still in curr
-            mapped_training[emoji].append(curr)
+            # if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
+            # if (emoji == u'\ud83d\ude0a') or (emoji == u'\ud83d\ude12'):
+            if emoji >= u'\ud83d\ude00' and emoji <= u'\ud83d\ude13':
+                mapped_training[emoji].append(curr)
+                for word in curr:
+                # if word != emoji:
+                    if not ((word > u'\ud800' and word < u'\udbff') or (word > u'\udc00' and word < u'\udfff')):
+                        emojis[emoji][word.lower()] += 1
             if str(curr) not in emojis_training:
                 emojis_training[str(curr)] = set()
             emojis_training[str(curr)].add(emoji)
 
-            for word in curr:
-                # if word != emoji:
-                if not ((word > u'\ud800' and word < u'\udbff') or (word > u'\udc00' and word < u'\udfff')):
-                    emojis[emoji][word.lower()] += 1
+            
 
     for emoji in emojis.keys():
         unique_words = set()
@@ -74,10 +79,7 @@ def ScanTesting(testing):
             if curr[i] == " " and curr[i+1] == " ":
                 curr = curr[:i] + curr[i+1:]
             if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
-            # if (curr[i] == u'\ud83d' and curr[i+1] == u'\ude0a') or (curr[i] == u'\ud83d' and curr[i+1] == u'\ude12'):
-            # if curr[i] == u'\ud83d' and curr[i+1] >= u'\ude00' and curr[i+1] <= u'\ude13':
                 curr_emojis.add(curr[i:i+2])
-            if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
                 curr = curr[:i] + curr[i+2:]
                 i -= 1
                 # if i != len(curr) - 2 and curr[i+2] != " ":
@@ -89,7 +91,10 @@ def ScanTesting(testing):
         curr = curr.lower().split(" ")
         for emoji in curr_emojis:
             # key emoji is still in curr
-            mapped_testing[emoji].append(curr)
+            # if curr[i] > u'\ud800' and curr[i] < u'\udbff' and curr[i+1] > u'\udc00' and curr[i+1] < u'\udfff':
+            # if (emoji == u'\ud83d\ude0a') or (emoji == u'\ud83d\ude12'):
+            if emoji >= u'\ud83d\ude00' and emoji <= u'\ud83d\ude13':
+                mapped_testing[emoji].append(curr)
             if str(curr) not in emojis_testing:
                 emojis_testing[str(curr)] = set()
             emojis_testing[str(curr)].add(emoji)
@@ -140,39 +145,56 @@ def MaxEnt(mapped_training,mapped_testing,emojis_training,emojis_testing):
         for tweet in mapped_training[emoji]:
             feature_dict = defaultdict(int)
             for word in tweet:
-                # if word != emoji:
                 feature_dict[word] = 1
+            #COMMENT THIS PART OUT TO REMOVE EMOJIS
+            # for other_emoji in emojis_training[str(tweet)]:
+            #     if other_emoji != emoji:
+            #         feature_dict[other_emoji] = 1
             maxent_pairlist.append((feature_dict,emoji))
     
     test_list = []
     for emoji in mapped_testing.keys():
         for tweet in mapped_testing[emoji]:
             param_dict = defaultdict(int)
+            other_emojis = set()
             for word in tweet:
                 # if word != emoji:
                 param_dict[word] = 1
-            test_list.append((tweet,param_dict,emojis_testing[str(tweet)]))
+            for other_emoji in emojis_testing[str(tweet)]:
+                if other_emoji != emoji:
+                    param_dict[other_emoji] = 1
+                    other_emojis.add(other_emoji)
+            test_list.append((tweet,param_dict,emoji,other_emojis))
 
     classifier = MaxentClassifier.train(maxent_pairlist,max_iter=10)
     acc = 0.0
     
     for test in test_list:
-        pred_class = classifier.classify(test[1])
-        print test[0],pred_class,test[2]
-        if pred_class in test[2]:
+        class_dist = classifier.prob_classify(test[1])
+        pred_dict = defaultdict(float)
+        for pred in class_dist.samples():
+            pred_dict[pred] = class_dist.prob(pred)
+        max_emoji = max(pred_dict, key=pred_dict.get)
+        while max_emoji in test[3]:
+            del pred_dict[max_emoji]
+            max_emoji = max(pred_dict, key=pred_dict.get)
+        if max_emoji == test[2]:
             acc += 1.0
+        print test[0],max_emoji
+        
     print acc / len(test_list)
 
 def main():
     # f = open('tweets.txt', 'a')
     # f.write(('"I just want to not be bothered \ud83d\ude02\ud83d\ude44"]}'))
     # f.close()
-    f = open('tweets_all.txt', 'r')
+    f = open('tweets_20.txt', 'r')
     emojis = defaultdict()
     tweets = list(set(json.loads(f.read())["statuses"]))
-    # print len(tweets)
-    training_tweets = tweets[:20000]
-    testing_tweets = tweets[20000:]
+    print len(tweets)
+    # 5000, 8900, 20000
+    training_tweets = tweets[:8900]
+    testing_tweets = tweets[8900:]
     inverse_doc_freq = defaultdict(float)
     mapped_training,emojis_training = ScanTraining(training_tweets,emojis,inverse_doc_freq)
     mapped_testing,emojis_testing = ScanTesting(testing_tweets)
